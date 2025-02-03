@@ -1535,64 +1535,108 @@ class WorkerShutdownTestCase(TimeoutTestCase, RQTestCase):
 
     @slow
     def test_working_worker_warm_shutdown_after_dequeue(self):
-        """worker with an ongoing job receiving single SIGTERM signal, allowing job to finish then shutting down"""
-        fooq = Queue('foo', connection=self.connection)
-        w = SimpleWorker(fooq)
-        # mock the heardbeat function of the Worker to print the worker name and then continue
-        # executing the original function
-        logging.warning('blah')
-        original_heartbeat = w.queue_class.dequeue_any
-        p = Process(target=kill_worker, args=(os.getpid(), False, 0))
+        """worker just took a job from the queue, but received the SIGTERM
+        before it could start execution and switch to busy state.
 
-        def mocked_heartbeat(*args, **kwargs):
-            result = original_heartbeat(*args, **kwargs)
-            # send the SIGTERM signal to the worker
-            logging.warning('Sending SIGTERM to the worker')
-            p.start()
-            return result
+        The test mocks multiple functions to achieve a specific behavior.
+        1. Mock dequeue_any call. This call will first allow the original dequeue_any to finish
+        and then start a process to send the SIGTERM immediately. After kicking off the process, it
+        starts the heartbeat mock.
+        2. The heartbeat mock will simulate the dropped DB connection and create a mock on the expire
+        call to Redis.
+        3. Expire call raises BaseException, which is common when the READ from redis fails due to
+        the network drop."""
 
-        mocked_patch = mock.patch.object(w.queue_class, 'dequeue_any', side_effect=mocked_heartbeat)
-        mocked_patch.start()
-        sentinel_file = '/tmp/.rq_sentinel_after_dequeue'
-        # remove file if it exists
-        if os.path.exists(sentinel_file):
-            os.remove(sentinel_file)
-        job = fooq.enqueue(create_file_after_timeout, sentinel_file, 2)
-        self.assertFalse(w._stop_requested)
+        def run_test():
+            """Scoped the test within a function to avoid cell-var-from-loop W0640
+            pylint errors."""
+            fooq = Queue('foo', connection=self.connection)
+            w = Worker(fooq)
+            # save the original callbacks
+            original_dequeue = w.queue_class.dequeue_any
+            original_heartbeat = w.heartbeat
 
-        w.work()
-        logging.info(job.get_status())
-        job.refresh()
-        logging.info(job.get_status())
-        p.join(2)
-        self.assertFalse(p.is_alive())
-        # should have considred that the job was already de-queued.
-        # self.assertTrue(w._stop_requested)
+            p = Process(target=kill_worker, args=(os.getpid(), False, 0))
 
-        # the file should exist
-        # self.assertTrue(os.path.exists(sentinel_file))
+            # patch to simulate DB connection drop
+            def expire_disconnect(*args, **kwargs):
+                # simulate connection read failing, resulting in raising BaseException
+                raise BaseException  # pylint: disable=W0719
 
-        # self.assertIsNotNone(w.shutdown_requested_date)
-        # self.assertEqual(type(w.shutdown_requested_date).__name__, 'datetime')
-        # try to work again, see if we can get the task finally executed
+            expire_patch = mock.patch.object(w.connection, 'expire', side_effect=expire_disconnect)
 
-        logging.info('\n\n\n\n\n')
-        registries = [
-            fooq.started_job_registry,
-            fooq.finished_job_registry,
-            fooq.failed_job_registry,
-            fooq.deferred_job_registry,
-            fooq.scheduled_job_registry,
-        ]
-        in_registries = []
-        for registry in registries:
-            if job.id in registry.get_job_ids():
-                in_registries.append(registry)
-        logging.info(in_registries)
-        logging.info('\n\n\n\n\n')
+            def mocked_heartbeat(*args, **kwargs):
+                # ensure the process to kill worker has executed by now
+                logging.warning('killing connection')
+                if not expire_patch.is_started:
+                    expire_patch.start()
+                while p.exitcode is None:
+                    # wait for the process to finish. Ensure SIGTERM was sent
+                    time.sleep(0.1)
+                # run the original heartbeat
+                return original_heartbeat(*args, **kwargs)
 
-        mocked_patch.stop()
-        w.work(burst=True)
+            heartbeat_patch = mock.patch.object(w, 'heartbeat', side_effect=mocked_heartbeat)
+
+            def mocked_dequeue(*args, **kwargs):
+                result = original_dequeue(*args, **kwargs)
+                # send the SIGTERM signal to the worker
+                logging.warning('Sending SIGTERM to the worker with %s', p.pid)
+                if p.exitcode is None:
+                    p.start()
+                if not heartbeat_patch.is_started:
+                    heartbeat_patch.start()
+                return result
+
+            dequeue_patch = mock.patch.object(w.queue_class, 'dequeue_any', side_effect=mocked_dequeue)
+            dequeue_patch.start()
+
+            sentinel_file = '/tmp/.rq_sentinel_after_dequeue'
+            # remove file if it exists
+            if os.path.exists(sentinel_file):
+                os.remove(sentinel_file)
+            job = fooq.enqueue(create_file_after_timeout, sentinel_file, 2)
+
+            # the stop requested should register, since SIGTERM was sent
+            self.assertFalse(w._stop_requested)
+            # this work call demonstrates the disconnect event
+            w.work()
+
+            job.refresh()
+            # job remains queued after this.
+            self.assertTrue(job.get_status() == JobStatus.QUEUED)
+
+            p.join(2)
+
+            # try to work again, see if we can get the task finally executed
+
+            registries = [
+                fooq.started_job_registry,
+                fooq.finished_job_registry,
+                fooq.failed_job_registry,
+                fooq.deferred_job_registry,
+                fooq.scheduled_job_registry,
+            ]
+            in_any_registry = []
+            for registry in registries:
+                if job.id in registry.get_job_ids():
+                    in_any_registry.append(registry)
+            # shows that the job is not in any registry
+            assert len(in_any_registry) == 0
+
+            dequeue_patch.stop()
+            expire_patch.stop()
+            heartbeat_patch.stop()
+
+            # after the mocks are stopped, see if the .work will execute the job
+            w.work(burst=True)
+            # queued means the job is now a ghost and won't be picked up.
+            self.assertTrue(job.get_status() == JobStatus.QUEUED)
+
+        # the for loop to ensure the test is not flaky. This way we're not relying
+        # on someone's machine.
+        for _ in range(30):
+            run_test()
 
 
 def schedule_access_self():

@@ -46,7 +46,11 @@ class TestCase(unittest.TestCase):
         # Set up connection to Redis
         cls.connection = find_empty_redis_database()
         # Shut up logging
-        logging.disable(logging.ERROR)
+        if not os.environ.get('ENABLE_TEST_LOGGING'):
+            logging.disable(logging.ERROR)
+        else:
+            rq_logger = logging.getLogger('rq.worker')
+            rq_logger.setLevel(logging.DEBUG)
 
     def setUp(self):
         # Flush beforewards (we like our hygiene)
@@ -58,7 +62,8 @@ class TestCase(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        logging.disable(logging.NOTSET)
+        if not os.environ.get('ENABLE_TEST_LOGGING'):
+            logging.disable(logging.NOTSET)
 
 
 class RQTestCase(unittest.TestCase):
@@ -77,7 +82,11 @@ class RQTestCase(unittest.TestCase):
         cls.connection = find_empty_redis_database()
 
         # Shut up logging
-        logging.disable(logging.ERROR)
+        if not os.environ.get('ENABLE_TEST_LOGGING'):
+            logging.disable(logging.ERROR)
+        else:
+            rq_logger = logging.getLogger('rq.worker')
+            rq_logger.setLevel(logging.DEBUG)
 
     def setUp(self):
         # Flush beforewards (we like our hygiene)
@@ -95,4 +104,5 @@ class RQTestCase(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        logging.disable(logging.NOTSET)
+        if not os.environ.get('ENABLE_TEST_LOGGING'):
+            logging.disable(logging.NOTSET)
