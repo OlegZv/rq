@@ -1545,7 +1545,8 @@ class WorkerShutdownTestCase(TimeoutTestCase, RQTestCase):
         2. The heartbeat mock will simulate the dropped DB connection and create a mock on the
         expire call to Redis.
         3. Expire call raises BaseException, which is common when the READ from redis fails due to
-        the network drop."""
+        the network drop.
+        """
 
         def run_test():
             """Scoped the test within a function to avoid cell-var-from-loop W0640
