@@ -1542,8 +1542,8 @@ class WorkerShutdownTestCase(TimeoutTestCase, RQTestCase):
         1. Mock dequeue_any call. This call will first allow the original dequeue_any to finish
         and then start a process to send the SIGTERM immediately. After kicking off the process, it
         starts the heartbeat mock.
-        2. The heartbeat mock will simulate the dropped DB connection and create a mock on the expire
-        call to Redis.
+        2. The heartbeat mock will simulate the dropped DB connection and create a mock on the
+        expire call to Redis.
         3. Expire call raises BaseException, which is common when the READ from redis fails due to
         the network drop."""
 
