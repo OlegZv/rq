@@ -75,6 +75,7 @@ except ImportError:
     def setprocname(title: str) -> None:
         pass
 
+
 # Set initial level to INFO.
 logger = logging.getLogger('rq.worker')
 if logger.level == logging.NOTSET:
@@ -207,6 +208,8 @@ class BaseWorker:
         self._state: str = 'starting'
         self._is_horse: bool = False
         self._horse_pid: int = 0
+        # indicates that the worker received the stop signal, but
+        # was in the BUSY state and is waiting for the job to finish
         self._stop_requested: bool = False
         self._stopped_job_id = None
 
@@ -619,7 +622,6 @@ class BaseWorker:
                         elif max_idle_time is not None:
                             self.log.info('Worker %s: idle for %d seconds, quitting', self.key, max_idle_time)
                         break
-
                     job, queue = result
                     self.execute_job(job, queue)
                     self.heartbeat()
@@ -1382,7 +1384,7 @@ class Worker(BaseWorker):
         try:
             job_status = job.get_status()
         except InvalidJobOperation:
-            return # Job completed and its ttl has expired
+            return  # Job completed and its ttl has expired
 
         if self._stopped_job_id == job.id:
             # Work-horse killed deliberately

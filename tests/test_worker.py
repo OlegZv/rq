@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import shutil
 import signal
@@ -76,7 +77,12 @@ class TestWorker(RQTestCase):
         self.assertEqual(w.queues[0].name, 'foo')
 
         # With list of Queues
-        w = Worker([Queue('foo', connection=self.connection), Queue('bar', connection=self.connection)])
+        w = Worker(
+            [
+                Queue('foo', connection=self.connection),
+                Queue('bar', connection=self.connection),
+            ]
+        )
         self.assertEqual(w.queues[0].name, 'foo')
         self.assertEqual(w.queues[1].name, 'bar')
 
@@ -126,7 +132,10 @@ class TestWorker(RQTestCase):
 
     def test_find_by_key(self):
         """Worker.find_by_key restores queues, state and job_id."""
-        queues = [Queue('foo', connection=self.connection), Queue('bar', connection=self.connection)]
+        queues = [
+            Queue('foo', connection=self.connection),
+            Queue('bar', connection=self.connection),
+        ]
         w = Worker(queues)
         w.register_death()
         w.register_birth()
@@ -242,7 +251,12 @@ class TestWorker(RQTestCase):
         # NOTE: We have to fake this enqueueing for this test case.
         # What we're simulating here is a call to a function that is not
         # importable from the worker process.
-        job = Job.create(func=do_nothing, origin=q.name, meta={'key': 'value'}, connection=self.connection)
+        job = Job.create(
+            func=do_nothing,
+            origin=q.name,
+            meta={'key': 'value'},
+            connection=self.connection,
+        )
         job.save()
 
         invalid_meta = '{{{{{{{{INVALID_JSON'
@@ -385,7 +399,10 @@ class TestWorker(RQTestCase):
 
         # Should be the original enqueued_at date, not the date of enqueueing
         # to the failed queue
-        self.assertEqual(job.enqueued_at.replace(tzinfo=timezone.utc).timestamp(), enqueued_at_date.timestamp())
+        self.assertEqual(
+            job.enqueued_at.replace(tzinfo=timezone.utc).timestamp(),
+            enqueued_at_date.timestamp(),
+        )
         if job.supports_redis_streams:
             result = Result.fetch_latest(job)
             self.assertTrue(result.exc_string)
@@ -419,7 +436,10 @@ class TestWorker(RQTestCase):
 
         # Should be the original enqueued_at date, not the date of enqueueing
         # to the failed queue
-        self.assertEqual(job.enqueued_at.replace(tzinfo=timezone.utc).timestamp(), enqueued_at_date.timestamp())
+        self.assertEqual(
+            job.enqueued_at.replace(tzinfo=timezone.utc).timestamp(),
+            enqueued_at_date.timestamp(),
+        )
         self.assertTrue(job.exc_info)  # should contain exc_info
 
     def test_statistics(self):
@@ -819,7 +839,10 @@ class TestWorker(RQTestCase):
 
         self.assertEqual(self.connection.hget(worker.key, 'current_job'), None)
         worker.set_current_job_id(job.id)
-        self.assertEqual(worker.get_current_job_id(), as_text(self.connection.hget(worker.key, 'current_job')))
+        self.assertEqual(
+            worker.get_current_job_id(),
+            as_text(self.connection.hget(worker.key, 'current_job')),
+        )
         self.assertEqual(worker.get_current_job(), job)
 
     def test_custom_job_class(self):
@@ -863,7 +886,11 @@ class TestWorker(RQTestCase):
 
         job = fooq.enqueue(say_pid)
         self.assertEqual(w.work(burst=True), True, 'Expected at least some work done.')
-        self.assertEqual(job.result, os.getpid(), 'PID mismatch, fork() is not supposed to happen here')
+        self.assertEqual(
+            job.result,
+            os.getpid(),
+            'PID mismatch, fork() is not supposed to happen here',
+        )
 
     def test_simpleworker_heartbeat_ttl(self):
         """SimpleWorker's key must last longer than job.timeout when working"""
@@ -988,7 +1015,10 @@ class TestWorker(RQTestCase):
 
         # Suspend the worker, and then send resume command in the background
         q.enqueue(say_hello)
-        p = Process(target=resume_worker, args=(self.connection.connection_pool.connection_kwargs.copy(), 2))
+        p = Process(
+            target=resume_worker,
+            args=(self.connection.connection_pool.connection_kwargs.copy(), 2),
+        )
         p.start()
         w.worker_ttl = 1
         w.work(max_jobs=1)
@@ -1136,7 +1166,11 @@ class TestWorker(RQTestCase):
         q = Queue(connection=self.connection)
         # Also make sure that previously existing metadata
         # persists properly
-        job = q.enqueue(modify_self, meta={'foo': 'bar', 'baz': 42}, args=[{'baz': 10, 'newinfo': 'waka'}])
+        job = q.enqueue(
+            modify_self,
+            meta={'foo': 'bar', 'baz': 42},
+            args=[{'baz': 10, 'newinfo': 'waka'}],
+        )
 
         w = Worker([q], connection=self.connection)
         w.work(burst=True)
@@ -1153,7 +1187,11 @@ class TestWorker(RQTestCase):
         q = Queue(connection=self.connection)
         # Also make sure that previously existing metadata
         # persists properly
-        job = q.enqueue(modify_self_and_error, meta={'foo': 'bar', 'baz': 42}, args=[{'baz': 10, 'newinfo': 'waka'}])
+        job = q.enqueue(
+            modify_self_and_error,
+            meta={'foo': 'bar', 'baz': 42},
+            args=[{'baz': 10, 'newinfo': 'waka'}],
+        )
 
         w = Worker([q], connection=self.connection)
         w.work(burst=True)
@@ -1178,7 +1216,10 @@ class TestWorker(RQTestCase):
         job = q.enqueue(say_hello, args=('Frank',), result_ttl=10)
         w.perform_job(job, q)
         mock_logger_info.assert_called_with('Result is kept for %s seconds', 10)
-        self.assertIn('Result is kept for %s seconds', [c[0][0] for c in mock_logger_info.call_args_list])
+        self.assertIn(
+            'Result is kept for %s seconds',
+            [c[0][0] for c in mock_logger_info.call_args_list],
+        )
 
     @mock.patch('rq.worker.logger.info')
     def test_log_result_lifespan_false(self, mock_logger_info):
@@ -1191,7 +1232,10 @@ class TestWorker(RQTestCase):
         w = TestWorker([q], connection=self.connection)
         job = q.enqueue(say_hello, args=('Frank',), result_ttl=10)
         w.perform_job(job, q)
-        self.assertNotIn('Result is kept for 10 seconds', [c[0][0] for c in mock_logger_info.call_args_list])
+        self.assertNotIn(
+            'Result is kept for 10 seconds',
+            [c[0][0] for c in mock_logger_info.call_args_list],
+        )
 
     @mock.patch('rq.worker.logger.info')
     def test_log_job_description_true(self, mock_logger_info):
@@ -1328,10 +1372,13 @@ class TestWorker(RQTestCase):
 
         self.assertEqual(expected, sorted_ids)
 
-    def test_monitor_work_horse_handles_performed_job_with_non_zero_exit_code_and_result_ttl_0(self):
+    def test_monitor_work_horse_handles_performed_job_with_non_zero_exit_code_and_result_ttl_0(
+        self,
+    ):
         q = Queue(connection=self.connection)
         w = Worker([q])
         perform_job = w.perform_job
+
         def p(*args, **kwargs):
             perform_job(*args, **kwargs)
             raise Exception
@@ -1339,6 +1386,7 @@ class TestWorker(RQTestCase):
         w.perform_job = p
         q.enqueue(say_hello, args=('ccc',), result_ttl=0)
         self.assertTrue(w.work(burst=True))
+
 
 def wait_and_kill_work_horse(pid, time_to_wait=0.0):
     time.sleep(time_to_wait)
@@ -1403,7 +1451,8 @@ class WorkerShutdownTestCase(TimeoutTestCase, RQTestCase):
 
         sentinel_file = '/tmp/.rq_sentinel_cold'
         self.assertFalse(
-            os.path.exists(sentinel_file), '{sentinel_file} file should not exist yet, delete that file and try again.'
+            os.path.exists(sentinel_file),
+            '{sentinel_file} file should not exist yet, delete that file and try again.',
         )
         fooq.enqueue(create_file_after_timeout, sentinel_file, 5)
         self.assertFalse(w._stop_requested)
@@ -1483,6 +1532,112 @@ class WorkerShutdownTestCase(TimeoutTestCase, RQTestCase):
         self.assertTrue(job in failed_job_registry)
         self.assertEqual(fooq.count, 0)
         self.assertFalse(psutil.pid_exists(subprocess_pid))
+
+    @slow
+    def test_working_worker_warm_shutdown_after_dequeue(self):
+        """worker just took a job from the queue, but received the SIGTERM
+        before it could start execution and switch to busy state.
+
+        The test mocks multiple functions to achieve a specific behavior.
+        1. Mock dequeue_any call. This call will first allow the original dequeue_any to finish
+        and then start a process to send the SIGTERM immediately. After kicking off the process, it
+        starts the heartbeat mock.
+        2. The heartbeat mock will simulate the dropped DB connection and create a mock on the
+        expire call to Redis.
+        3. Expire call raises BaseException, which is common when the READ from redis fails due to
+        the network drop.
+        """
+
+        def run_test():
+            """Scoped the test within a function to avoid cell-var-from-loop W0640
+            pylint errors."""
+            fooq = Queue('foo', connection=self.connection)
+            w = Worker(fooq)
+            # save the original callbacks
+            original_dequeue = w.queue_class.dequeue_any
+            original_heartbeat = w.heartbeat
+
+            p = Process(target=kill_worker, args=(os.getpid(), False, 0))
+
+            # patch to simulate DB connection drop
+            def expire_disconnect(*args, **kwargs):
+                # simulate connection read failing, resulting in raising BaseException
+                raise BaseException  # pylint: disable=W0719
+
+            expire_patch = mock.patch.object(w.connection, 'expire', side_effect=expire_disconnect)
+
+            def mocked_heartbeat(*args, **kwargs):
+                # ensure the process to kill worker has executed by now
+                logging.warning('killing connection')
+                if not expire_patch.is_started:
+                    expire_patch.start()
+                while p.exitcode is None:
+                    # wait for the process to finish. Ensure SIGTERM was sent
+                    time.sleep(0.1)
+                # run the original heartbeat
+                return original_heartbeat(*args, **kwargs)
+
+            heartbeat_patch = mock.patch.object(w, 'heartbeat', side_effect=mocked_heartbeat)
+
+            def mocked_dequeue(*args, **kwargs):
+                result = original_dequeue(*args, **kwargs)
+                # send the SIGTERM signal to the worker
+                logging.warning('Sending SIGTERM to the worker with %s', p.pid)
+                if p.exitcode is None:
+                    p.start()
+                if not heartbeat_patch.is_started:
+                    heartbeat_patch.start()
+                return result
+
+            dequeue_patch = mock.patch.object(w.queue_class, 'dequeue_any', side_effect=mocked_dequeue)
+            dequeue_patch.start()
+
+            sentinel_file = '/tmp/.rq_sentinel_after_dequeue'
+            # remove file if it exists
+            if os.path.exists(sentinel_file):
+                os.remove(sentinel_file)
+            job = fooq.enqueue(create_file_after_timeout, sentinel_file, 2)
+
+            # the stop requested should register, since SIGTERM was sent
+            self.assertFalse(w._stop_requested)
+            # this work call demonstrates the disconnect event
+            w.work()
+
+            job.refresh()
+            # job remains queued after this.
+            self.assertTrue(job.get_status() == JobStatus.QUEUED)
+
+            p.join(2)
+
+            # try to work again, see if we can get the task finally executed
+
+            registries = [
+                fooq.started_job_registry,
+                fooq.finished_job_registry,
+                fooq.failed_job_registry,
+                fooq.deferred_job_registry,
+                fooq.scheduled_job_registry,
+            ]
+            in_any_registry = []
+            for registry in registries:
+                if job.id in registry.get_job_ids():
+                    in_any_registry.append(registry)
+            # shows that the job is not in any registry
+            assert len(in_any_registry) == 0
+
+            dequeue_patch.stop()
+            expire_patch.stop()
+            heartbeat_patch.stop()
+
+            # after the mocks are stopped, see if the .work will execute the job
+            w.work(burst=True)
+            # queued means the job is now a ghost and won't be picked up.
+            self.assertTrue(job.get_status() == JobStatus.QUEUED)
+
+        # the for loop to ensure the test is not flaky. This way we're not relying
+        # on someone's machine.
+        for _ in range(30):
+            run_test()
 
 
 def schedule_access_self():
