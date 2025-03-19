@@ -79,6 +79,14 @@ queue.enqueue(say_hello, retry=Retry(max=3, interval=[10, 30, 60]))
 
 For a more complete example, refer to the [docs][d].  But this is the essence.
 
+> Starting with v2.3 you can also use redis' `Retry` class. For example
+> ```python
+> from redis.retry import Retry
+> from redis.backoff import ExponentialBackoff
+> # will retry 5 times with delays as [2, 4, 8, 10, 10]
+> queue.enqueue(say_hello, retry=Retry(ExponentialBackoff(10, 0.5), 5))
+> ```
+> For more backoff strategies, checkout official [Redis Backoff docs](https://redis-py.readthedocs.io/en/stable/backoff.html#backoff-label).
 
 ### The worker
 

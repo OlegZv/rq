@@ -52,14 +52,25 @@ queue.enqueue(my_func, retry=Retry(max=3, interval=60))
 queue.enqueue(my_func, retry=Retry(max=3, interval=[10, 30, 60]))
 ```
 
-<div class="warning">
+<div class="warning" >
     <img style="float: right; margin-right: -60px; margin-top: -38px" src="/img/warning.png" />
     <strong>Note:</strong>
-    <p>
+    <p markdown="1">
         If you use `interval` argument with `Retry`, don't forget to run your workers using
         the `--with-scheduler` argument.
     </p>
 </div>
+
+_Starting with v2.3_ you can also use redis' `Retry` class. For example:
+
+```python
+from redis.retry import Retry
+from redis.backoff import ExponentialBackoff
+# will retry 5 times with delays as [2, 4, 8, 10, 10]
+queue.enqueue(say_hello, retry=Retry(ExponentialBackoff(10, 0.5), 5))
+```
+
+For more backoff strategies, checkout official [Redis Backoff docs](https://redis-py.readthedocs.io/en/stable/backoff.html#backoff-label).
 
 
 ## Custom Exception Handlers
@@ -141,7 +152,7 @@ The handler itself is a function that takes the following parameters: `job`,
 from resource import struct_rusage
 from rq.job import Job
 def my_work_horse_killed_handler(job: Job, retpid: int, ret_val: int, rusage: struct_rusage):
-    # do your thing here, for example set job.retries_left to 0 
+    # do your thing here, for example set job.retries_left to 0
 
 ```
 
@@ -149,6 +160,6 @@ def my_work_horse_killed_handler(job: Job, retpid: int, ret_val: int, rusage: st
 RQ Exceptions you can get in your job failure callbacks
 
 # AbandonedJobError
-This error means an unfinished job was collected by another worker's maintenance task.  
-This usually happens when a worker is busy with a job and is terminated before it finished that job.  
+This error means an unfinished job was collected by another worker's maintenance task.
+This usually happens when a worker is busy with a job and is terminated before it finished that job.
 Another worker collects this job and moves it to the FailedJobRegistry.

@@ -4,6 +4,8 @@ from multiprocessing import Process
 from unittest import mock
 
 import redis
+from redis.backoff import ConstantBackoff, ExponentialBackoff
+from redis.retry import Retry as RedisRetry
 
 from rq import Queue
 from rq.defaults import DEFAULT_MAINTENANCE_TASK_INTERVAL
@@ -476,6 +478,19 @@ class TestQueue(RQTestCase):
         job = queue.enqueue_in(timedelta(seconds=30), say_hello, retry=Retry(3, [2]))
         self.assertEqual(job.retries_left, 3)
         self.assertEqual(job.retry_intervals, [2])
+
+    def test_enqueue_in_with_redis_retry(self):
+        """Ensure that the retry parameter is passed
+        to the enqueue_at function from enqueue_in.
+        """
+        queue = Queue(connection=self.connection)
+        job = queue.enqueue_in(timedelta(seconds=30), say_hello, retry=RedisRetry(ConstantBackoff(5), 3))
+        self.assertEqual(job.retries_left, 3)
+        self.assertEqual(job.retry_intervals, [5, 5, 5])
+
+        job = queue.enqueue_in(timedelta(seconds=30), say_hello, retry=RedisRetry(ExponentialBackoff(10, 0.5), 5))
+        self.assertEqual(job.retries_left, 5)
+        self.assertEqual(job.retry_intervals, [2, 4, 8, 10, 10])
 
     def test_custom_connection_pool(self):
         """Connection pool customizing. Ensure that we can properly set a

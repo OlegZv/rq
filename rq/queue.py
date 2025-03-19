@@ -24,6 +24,7 @@ from typing import (
 )
 
 from redis import WatchError
+from redis.retry import Retry as RedisRetry
 
 from .timeouts import BaseDeathPenalty, UnixSignalDeathPenalty
 
@@ -525,7 +526,7 @@ class Queue:
         job_id: Optional[str] = None,
         meta: Optional[Dict] = None,
         status: JobStatus = JobStatus.QUEUED,
-        retry: Optional['Retry'] = None,
+        retry: Optional['Union[Retry, RedisRetry]'] = None,
         *,
         on_success: Optional[Union[Callback, Callable]] = None,
         on_failure: Optional[Union[Callback, Callable]] = None,
@@ -600,9 +601,18 @@ class Queue:
             group_id=group_id,
         )
 
-        if retry:
-            job.retries_left = retry.max
-            job.retry_intervals = retry.intervals
+        if retry is not None:
+            if isinstance(retry, RedisRetry):
+                job.retries_left = retry._retries
+                # generate redis intervals
+                job.retry_intervals = []
+                # iterate from 1 to retries_left + 1
+                # backoff is computed on the number of retries
+                for r in range(1, job.retries_left + 1):
+                    job.retry_intervals.append(retry._backoff.compute(r + 1))
+            else:
+                job.retries_left = retry.max
+                job.retry_intervals = retry.intervals
 
         return job
 
@@ -1315,7 +1325,7 @@ class Queue:
             if timeout == 0:
                 raise ValueError('RQ does not support indefinite timeouts. Please pick a timeout value > 0')
             colored_queues = ', '.join(map(str, [green(str(queue)) for queue in queue_keys]))
-            logger.debug("Starting BLPOP operation for queues %s with timeout of %d", colored_queues, timeout)
+            logger.debug('Starting BLPOP operation for queues %s with timeout of %d', colored_queues, timeout)
             assert connection
             result = connection.blpop(queue_keys, timeout)
             if result is None:
